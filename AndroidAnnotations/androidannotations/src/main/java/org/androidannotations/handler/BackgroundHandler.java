@@ -51,11 +51,30 @@ public class BackgroundHandler extends AbstractRunnableHandler {
 		ExecutableElement executableElement = (ExecutableElement) element;
 
 		JMethod delegatingMethod = codeModelHelper.overrideAnnotatedMethod(executableElement, holder);
-
 		JBlock previousMethodBody = codeModelHelper.removeBody(delegatingMethod);
 
-		JDefinedClass anonymousTaskClass = codeModel().anonymousClass(BackgroundExecutor.Task.class);
+		Background annotation = element.getAnnotation(Background.class);
+		String id = annotation.id();
+		int delay = annotation.delay();
+		String serial = annotation.serial();
+		Background.Propagation propagation = annotation.propagation();
 
+		JClass backgroundExecutorClass = refClass(BackgroundExecutor.class);
+
+		if (propagation == Background.Propagation.REUSE) {
+			if (delay != 0) {
+				throw new IllegalArgumentException("Propagation.REUSE could not be used along with non-zero delay");
+			}
+			JInvocation threadCheck = backgroundExecutorClass.staticInvoke("isProperBackgroundThread")
+					.arg(serial);
+			delegatingMethod.body().
+					_if(threadCheck)
+					._then()
+					.add(previousMethodBody)
+					._return();
+		}
+
+		JDefinedClass anonymousTaskClass = codeModel().anonymousClass(BackgroundExecutor.Task.class);
 		JMethod executeMethod = anonymousTaskClass.method(JMod.PUBLIC, codeModel().VOID, "execute");
 		executeMethod.annotate(Override.class);
 
@@ -71,12 +90,6 @@ public class BackgroundHandler extends AbstractRunnableHandler {
 				.arg(caughtException);
 		catchBlock.body().add(uncaughtExceptionCall);
 
-		Background annotation = element.getAnnotation(Background.class);
-		String id = annotation.id();
-		int delay = annotation.delay();
-		String serial = annotation.serial();
-
-		JClass backgroundExecutorClass = refClass(BackgroundExecutor.class);
 		JInvocation newTask = _new(anonymousTaskClass).arg(lit(id)).arg(lit(delay)).arg(lit(serial));
 		JInvocation executeCall = backgroundExecutorClass.staticInvoke("execute").arg(newTask);
 

@@ -202,4 +202,32 @@ public @interface Background {
 	 * @return the serial execution group
 	 **/
 	String serial() default "";
+
+	/**
+	 * If propagation is {@link Propagation#REUSE}, the method will check first
+	 * if it is inside the proper background thread already, also checking the
+	 * {@link #serial()} if provided. If so, it will directly call the original
+	 * method instead of enqueuing it. The default value is
+	 * {@link Propagation#ENQUEUE}, which will always enqueue the execution.
+	 *
+	 * @return {@link Propagation#ENQUEUE} to always enqueue the execution,
+	 *         {@link Propagation#REUSE}, to check whether it is already on the
+	 *         right background thread
+	 */
+	Propagation propagation() default Propagation.ENQUEUE;
+
+	/**
+     * Indicates the propagation behavior of the Background annotated method.
+     */
+	enum Propagation {
+
+        /**
+         * The method call will always be enqueued.
+         */
+        ENQUEUE, //
+        /**
+         * The method will check first if it is inside the proper thread already.
+         */
+        REUSE
+    }
 }

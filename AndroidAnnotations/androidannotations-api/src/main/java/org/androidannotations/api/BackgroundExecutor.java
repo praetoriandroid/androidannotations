@@ -228,6 +228,18 @@ public class BackgroundExecutor {
 		return prevExecutor;
 	}
 
+	public static boolean isProperBackgroundThread(String serial) {
+		if (serial == null || "".equals(serial)) {
+			return !isUiThread();
+		} else {
+			return serial.equals(CURRENT_SERIAL.get());
+		}
+	}
+
+	private static boolean isUiThread() {
+		return Looper.getMainLooper().getThread() == Thread.currentThread();
+	}
+
 	/**
 	 * Changes the default {@link WrongThreadListener}. To restore the default
 	 * one use {@link #DEFAULT_WRONG_THREAD_LISTENER}.
@@ -279,7 +291,7 @@ public class BackgroundExecutor {
 	 * doesn't.
 	 */
 	public static void checkUiThread() {
-		if (Looper.getMainLooper().getThread() != Thread.currentThread()) {
+		if (!isUiThread()) {
 			wrongThreadListener.onUiExpected();
 		}
 	}
