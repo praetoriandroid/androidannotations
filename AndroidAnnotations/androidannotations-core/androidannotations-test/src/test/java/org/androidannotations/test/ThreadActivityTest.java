@@ -378,4 +378,125 @@ public class ThreadActivityTest {
 		}
 	}
 
+	@Test
+	public void supposeBackgroundWithExternalExecutor() {
+		BackgroundExecutor.executeSync(new Runnable() {
+			@Override
+			public void run() {
+				activity.supposedBackgroundMethod();
+			}
+		}, "test");
+	}
+
+	@Test(expected = IllegalStateException.class)
+	public void supposeBackgroundWithExternalExecutorWrongSerial() {
+		BackgroundExecutor.executeSync(new Runnable() {
+			@Override
+			public void run() {
+				activity.supposedBackgroundMethod();
+			}
+		}, "wrong serial");
+	}
+
+	@Test
+	public void serializedBackgroundTasksWithExternalExecutor() {
+		/* number of items to add to the list */
+		final int NUM_ADD = 20;
+
+		Executor originalBackgroundExecutor = null;
+		BackgroundExecutor.TaskExecutor originalTaskExecutor = null;
+		try {
+			ExecutorService executor = Executors.newSingleThreadExecutor();
+			ProxyExecutor proxyExecutor = new ProxyExecutor(executor, "test");
+			originalTaskExecutor = BackgroundExecutor.setTaskExecutor(proxyExecutor);
+			proxyExecutor.setOriginalTaskExecutor(originalTaskExecutor);
+			originalBackgroundExecutor = BackgroundExecutor.setExecutor(proxyExecutor);
+
+			/* sem.acquire() will be unlocked exactly after NUM_ADD releases */
+			final Semaphore sem = new Semaphore(1 - NUM_ADD);
+
+			final List<Integer> list = new ArrayList<Integer>();
+
+			final Random random = new Random();
+
+			for (int i = 0; i < NUM_ADD; i += 2) {
+				/*
+				 * wait a random delay (between 0 and 20 milliseconds) to increase
+				 * the probability of wrong order if buggy
+				 */
+				int delay = random.nextInt(20);
+				activity.addSerializedBackground(list, i, delay, sem);
+				final int finalI = i;
+				executor.execute(new Runnable() {
+					@Override
+					public void run() {
+						BackgroundExecutor.executeSync(new Runnable() {
+							@Override
+							public void run() {
+								int delay = random.nextInt(20);
+								activity.add(list, finalI + 1, delay, sem);
+							}
+						}, "test");
+					}
+				});
+			}
+
+			try {
+				/* wait for all tasks to be completed */
+				boolean acquired = sem.tryAcquire(MAX_WAITING_TIME, TimeUnit.MILLISECONDS);
+				Assert.assertTrue("Requested tasks should have completed execution", acquired);
+
+				for (int i = 0; i < NUM_ADD; i++) {
+					Assert.assertEquals("Items must be in order", i, (int) list.get(i));
+				}
+			} catch (InterruptedException e) {
+				Assert.assertFalse("Testing thread should never be interrupted", true);
+			}
+		} finally {
+			if (originalBackgroundExecutor != null) {
+				BackgroundExecutor.setExecutor(originalBackgroundExecutor);
+			}
+			if (originalTaskExecutor != null) {
+				BackgroundExecutor.setTaskExecutor(originalTaskExecutor);
+			}
+		}
+	}
+
+	private static class ProxyExecutor implements Executor, BackgroundExecutor.TaskExecutor {
+		private final ExecutorService executor;
+		private final String serial;
+		private BackgroundExecutor.TaskExecutor originalTaskExecutor;
+
+		ProxyExecutor(ExecutorService executor, String serial) {
+			this.executor = executor;
+			this.serial = serial;
+		}
+
+		@Override
+		public void execute(BackgroundExecutor.Task task) {
+			if (serial.equals(task.getSerial())) {
+				executor.execute(task);
+			} else {
+				originalTaskExecutor.execute(task);
+			}
+		}
+
+		@Override
+		public void execute(Runnable command) {
+			if (!(command instanceof BackgroundExecutor.Task)) {
+				throw new IllegalArgumentException("Unsupported task: " + command.getClass());
+			}
+
+			BackgroundExecutor.Task task = (BackgroundExecutor.Task) command;
+			if (!serial.equals(task.getSerial())) {
+				throw new IllegalArgumentException("Wrong serial: '" + task.getSerial() + "': only " + serial + " is supported");
+			}
+
+			executor.execute(task);
+		}
+
+		public void setOriginalTaskExecutor(BackgroundExecutor.TaskExecutor originalTaskExecutor) {
+			this.originalTaskExecutor = originalTaskExecutor;
+		}
+	}
 }

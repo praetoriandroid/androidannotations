@@ -33,6 +33,23 @@ public final class BackgroundExecutor {
 
 	private static final String TAG = "BackgroundExecutor";
 
+	private static final TaskExecutor DEFAULT_TASK_EXECUTOR = new TaskExecutor() {
+		@Override
+		public void execute(Task task) {
+			Future<?> future = null;
+			if (task.serial == null || !hasSerialRunning(task.serial)) {
+				task.executionAsked = true;
+				future = directExecute(task, task.remainingDelay);
+			}
+			if (task.id != null || task.serial != null) {
+				/* keep task */
+				task.future = future;
+				TASKS.add(task);
+			}
+		}
+	};
+	private static TaskExecutor taskExecutor = DEFAULT_TASK_EXECUTOR;
+
 	public static final Executor DEFAULT_EXECUTOR = Executors.newScheduledThreadPool(2 * Runtime.getRuntime().availableProcessors());
 	private static Executor executor = DEFAULT_EXECUTOR;
 
@@ -128,16 +145,7 @@ public final class BackgroundExecutor {
 	 *             executor)
 	 */
 	public static synchronized void execute(Task task) {
-		Future<?> future = null;
-		if (task.serial == null || !hasSerialRunning(task.serial)) {
-			task.executionAsked = true;
-			future = directExecute(task, task.remainingDelay);
-		}
-		if (task.id != null || task.serial != null) {
-			/* keep task */
-			task.future = future;
-			TASKS.add(task);
-		}
+		taskExecutor.execute(task);
 	}
 
 	/**
@@ -214,6 +222,31 @@ public final class BackgroundExecutor {
 	}
 
 	/**
+	 * Execute a task <b>synchronously</b>. The executor that uses this call
+	 * <b>must</b> be set with {@link #setExecutor(Executor)} and <b>must</b>
+	 * support its own tasks serialization using <code>serial</code> to avoid
+	 * conflicts with {@link #execute(Runnable, String, int, String)} or
+	 * {@link #execute(Task)}. This also allows to call methods, annotated with
+	 * {@link org.androidannotations.annotations.SupposeBackground} from such tasks.
+	 * @param runnable
+	 *            the task to execute
+	 * @param serial
+	 *            the serial queue <b>is used</b> by external executor
+	 *            (<code>null</code> or <code>""</code> for no serial execution)
+	 */
+	public static void executeSync(Runnable runnable, String serial) {
+		if ("".equals(serial)) {
+			serial = null;
+		}
+		try {
+			CURRENT_SERIAL.set(serial);
+			runnable.run();
+		} finally {
+			CURRENT_SERIAL.set(null);
+		}
+	}
+
+	/**
 	 * Change the executor.
 	 * 
 	 * Note that if the given executor is not a {@link ScheduledExecutorService}
@@ -227,9 +260,15 @@ public final class BackgroundExecutor {
 	 * @return Previous executor
 	 */
 	public static Executor setExecutor(Executor executor) {
-		Executor prevExecutor = BackgroundExecutor.executor;
+		Executor previousExecutor = BackgroundExecutor.executor;
 		BackgroundExecutor.executor = executor;
-		return prevExecutor;
+		return previousExecutor;
+	}
+
+	public static TaskExecutor setTaskExecutor(TaskExecutor taskExecutor) {
+		TaskExecutor previousExecutor = BackgroundExecutor.taskExecutor;
+		BackgroundExecutor.taskExecutor = taskExecutor;
+		return previousExecutor;
 	}
 
 	/**
@@ -439,6 +478,13 @@ public final class BackgroundExecutor {
 			}
 		}
 
+		public String getSerial() {
+			return serial;
+		}
+	}
+
+	public interface TaskExecutor {
+		void execute(Task task);
 	}
 
 	/**

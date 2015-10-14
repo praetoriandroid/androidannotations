@@ -22,6 +22,7 @@ import java.util.concurrent.Semaphore;
 
 import org.androidannotations.annotations.Background;
 import org.androidannotations.annotations.EActivity;
+import org.androidannotations.annotations.SupposeBackground;
 import org.androidannotations.annotations.UiThread;
 import org.androidannotations.annotations.UiThread.Propagation;
 import org.androidannotations.test.ebean.GenericBean;
@@ -54,7 +55,7 @@ public class ThreadActivity extends Activity {
 
 	}
 
-	private void add(List<Integer> list, int i, int delay, Semaphore sem) {
+	public void add(List<Integer> list, int i, int delay, Semaphore sem) {
 		try {
 			if (delay > 0) {
 				Thread.sleep(delay);
@@ -150,5 +151,9 @@ public class ThreadActivity extends Activity {
 	@UiThread
 	void uiThreadThrowException() {
 		throw new RuntimeException();
+	}
+
+	@SupposeBackground(serial = "test")
+	void supposedBackgroundMethod() {
 	}
 }
