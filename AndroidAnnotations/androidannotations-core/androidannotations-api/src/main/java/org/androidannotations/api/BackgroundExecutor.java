@@ -214,6 +214,31 @@ public final class BackgroundExecutor {
 	}
 
 	/**
+	 * Execute a task <b>synchronously</b>. The executor that uses this call
+	 * <b>must</b> be set with {@link #setExecutor(Executor)} and <b>must</b>
+	 * support its own tasks serialization using <code>serial</code> to avoid
+	 * conflicts with {@link #execute(Runnable, String, int, String)} or
+	 * {@link #execute(Task)}. This also allows to call methods, annotated with
+	 * {@link org.androidannotations.annotations.SupposeBackground} from such tasks.
+	 * @param runnable
+	 *            the task to execute
+	 * @param serial
+	 *            the serial queue <b>is used</b> by external executor
+	 *            (<code>null</code> or <code>""</code> for no serial execution)
+	 */
+	public static void executeSync(Runnable runnable, String serial) {
+		if ("".equals(serial)) {
+			serial = null;
+		}
+		try {
+			CURRENT_SERIAL.set(serial);
+			runnable.run();
+		} finally {
+			CURRENT_SERIAL.set(null);
+		}
+	}
+
+	/**
 	 * Change the executor.
 	 * 
 	 * Note that if the given executor is not a {@link ScheduledExecutorService}
@@ -439,6 +464,9 @@ public final class BackgroundExecutor {
 			}
 		}
 
+		public String getSerial() {
+			return serial;
+		}
 	}
 
 	/**
