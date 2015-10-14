@@ -223,9 +223,13 @@ public final class BackgroundExecutor {
 	 * 
 	 * @param executor
 	 *            the new executor
+	 *
+	 * @return Previous executor
 	 */
-	public static void setExecutor(Executor executor) {
+	public static Executor setExecutor(Executor executor) {
+		Executor prevExecutor = BackgroundExecutor.executor;
 		BackgroundExecutor.executor = executor;
+		return prevExecutor;
 	}
 
 	/**
