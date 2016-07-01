@@ -28,10 +28,13 @@ import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.util.ElementFilter;
 
+import org.androidannotations.api.FactoryHook;
 import org.androidannotations.process.ProcessHolder;
 
 import com.sun.codemodel.JBlock;
+import com.sun.codemodel.JClass;
 import com.sun.codemodel.JFieldVar;
+import com.sun.codemodel.JInvocation;
 import com.sun.codemodel.JMethod;
 import com.sun.codemodel.JVar;
 
@@ -89,6 +92,8 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 
 		JBlock factoryMethodBody = factoryMethod.body();
 
+		JClass factoryHook = refClass(FactoryHook.class);
+
 		/*
 		 * Singletons are bound to the application context
 		 */
@@ -102,11 +107,24 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 			JVar previousNotifier = viewNotifierHelper.replacePreviousNotifierWithNull(creationBlock);
 			creationBlock.assign(instanceField, _new(generatedClass).arg(factoryMethodContextParam.invoke("getApplicationContext")));
 			creationBlock.invoke(instanceField, getInit());
+
+			JInvocation onInstanceCreated = creationBlock.staticInvoke(factoryHook, "onInstanceCreated");
+			onInstanceCreated.arg(instanceField);
+
 			viewNotifierHelper.resetPreviousNotifier(creationBlock, previousNotifier);
+
+			JInvocation onInstanceRequested = factoryMethodBody.staticInvoke(factoryHook, "onInstanceRequested");
+			onInstanceRequested.arg(instanceField);
 
 			factoryMethodBody._return(instanceField);
 		} else {
-			factoryMethodBody._return(_new(generatedClass).arg(factoryMethodContextParam));
+			JInvocation newInvocation = _new(generatedClass).arg(factoryMethodContextParam);
+			JVar instance = factoryMethodBody.decl(generatedClass, "instance", newInvocation);
+			JInvocation onInstanceCreated = factoryMethodBody.staticInvoke(factoryHook, "onInstanceCreated");
+			onInstanceCreated.arg(instance);
+			JInvocation onInstanceRequested = factoryMethodBody.staticInvoke(factoryHook, "onInstanceRequested");
+			onInstanceRequested.arg(instance);
+			factoryMethodBody._return(instance);
 		}
 	}
 
