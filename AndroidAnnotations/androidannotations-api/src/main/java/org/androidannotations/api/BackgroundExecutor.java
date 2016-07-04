@@ -236,7 +236,7 @@ public class BackgroundExecutor {
 		}
 	}
 
-	private static boolean isUiThread() {
+	public static boolean isUiThread() {
 		return Looper.getMainLooper().getThread() == Thread.currentThread();
 	}
 

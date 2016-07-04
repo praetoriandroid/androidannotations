@@ -17,6 +17,7 @@ package org.androidannotations.holder;
 
 import static com.sun.codemodel.JExpr.cast;
 import static com.sun.codemodel.JMod.PRIVATE;
+import static com.sun.codemodel.JMod.STATIC;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -36,7 +37,6 @@ import com.sun.codemodel.JFieldRef;
 import com.sun.codemodel.JFieldVar;
 import com.sun.codemodel.JInvocation;
 import com.sun.codemodel.JMethod;
-import com.sun.codemodel.JMod;
 import com.sun.codemodel.JVar;
 
 public abstract class EComponentHolder extends BaseGeneratedClassHolder {
@@ -135,6 +135,6 @@ public abstract class EComponentHolder extends BaseGeneratedClassHolder {
 		JClass handlerClass = classes().HANDLER;
 		JClass looperClass = classes().LOOPER;
 		JInvocation arg = JExpr._new(handlerClass).arg(looperClass.staticInvoke(METHOD_MAIN_LOOPER));
-		handler = generatedClass.field(JMod.PRIVATE, handlerClass, "handler_", arg);
+		handler = generatedClass.field(PRIVATE | STATIC, handlerClass, "handler_", arg);
 	}
 }

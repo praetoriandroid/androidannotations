@@ -17,17 +17,28 @@ package org.androidannotations.holder;
 
 import static com.sun.codemodel.JExpr._new;
 import static com.sun.codemodel.JExpr._null;
+import static com.sun.codemodel.JMod.FINAL;
 import static com.sun.codemodel.JMod.PRIVATE;
 import static com.sun.codemodel.JMod.PUBLIC;
 import static com.sun.codemodel.JMod.STATIC;
 import static org.androidannotations.helper.ModelConstants.GENERATION_SUFFIX;
 
 import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.RunnableFuture;
 
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.util.ElementFilter;
 
+import com.sun.codemodel.JCatchBlock;
+import com.sun.codemodel.JDefinedClass;
+import com.sun.codemodel.JExpression;
+import com.sun.codemodel.JTryBlock;
+import org.androidannotations.api.BackgroundExecutor;
+import org.androidannotations.api.BeanInstantiationException;
 import org.androidannotations.api.FactoryHook;
 import org.androidannotations.process.ProcessHolder;
 
@@ -40,7 +51,20 @@ import com.sun.codemodel.JVar;
 
 public class EBeanHolder extends EComponentWithViewSupportHolder {
 
-	public static final String GET_INSTANCE_METHOD_NAME = "getInstance" + GENERATION_SUFFIX;
+	private static final String GET_INSTANCE_PREFIX = "getInstance";
+	private static final String GET_INSTANCE_INTERNAL_METHOD_NAME = GET_INSTANCE_PREFIX + "Internal" + GENERATION_SUFFIX;
+	public static final String GET_INSTANCE_METHOD_NAME = GET_INSTANCE_PREFIX + GENERATION_SUFFIX;
+
+	private JClass runnableFutureGenericClass = refClass(RunnableFuture.class).narrow(generatedClass);
+	private JClass futureTaskGenericClass = refClass(FutureTask.class).narrow(generatedClass);
+	private JClass callableGenericClass = refClass(Callable.class).narrow(generatedClass);
+
+	private JClass backgroundExecutorClass = refClass(BackgroundExecutor.class);
+	private JClass interruptedExceptionClass = refClass(InterruptedException.class);
+	private JClass illegalStateExceptionClass = refClass(IllegalStateException.class);
+	private JClass executionExceptionClass = refClass(ExecutionException.class);
+	private JClass beanInstantiationExceptionClass = refClass(BeanInstantiationException.class);
+	private JClass factoryHook = refClass(FactoryHook.class);
 
 	private JFieldVar contextField;
 	private JMethod constructor;
@@ -85,47 +109,87 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 	}
 
 	public void createFactoryMethod(boolean hasSingletonScope) {
+		createInternalFactoryMethod(hasSingletonScope);
 
 		JMethod factoryMethod = generatedClass.method(PUBLIC | STATIC, generatedClass, GET_INSTANCE_METHOD_NAME);
+		JBlock factoryMethodBody = factoryMethod.body();
+
+		JInvocation internalFactoryMethodInvocation = generatedClass.staticInvoke(GET_INSTANCE_INTERNAL_METHOD_NAME);
+		JVar factoryMethodContextParam = factoryMethod.param(FINAL, classes().CONTEXT, "context");
+		internalFactoryMethodInvocation.arg(factoryMethodContextParam);
+		JBlock checkUiThreadBlock = factoryMethodBody
+				._if(backgroundExecutorClass.staticInvoke("isUiThread"))
+				._then();
+		checkUiThreadBlock._return(internalFactoryMethodInvocation);
+
+		JDefinedClass anonymousCallableClass = codeModel().anonymousClass(callableGenericClass);
+		JMethod callMethod = anonymousCallableClass.method(PUBLIC, generatedClass, "call");
+		callMethod.annotate(Override.class);
+		callMethod.body()._return(internalFactoryMethodInvocation);
+		JInvocation futureInstantiation = _new(futureTaskGenericClass);
+		JExpression callableInstantiation = _new(anonymousCallableClass);
+		futureInstantiation.arg(callableInstantiation);
+		JVar runnableFuture = factoryMethodBody.decl(runnableFutureGenericClass, "runnableFuture", futureInstantiation);
+
+		JVar handler = getHandler();
+		factoryMethodBody.add(handler.invoke("post").arg(runnableFuture));
+
+		JTryBlock tryBlock = factoryMethodBody._try();
+		tryBlock.body()._return(runnableFuture.invoke("get"));
+
+		JCatchBlock catchBlock = tryBlock._catch(interruptedExceptionClass);
+		JVar exception = catchBlock.param("e");
+		catchBlock.body()._throw(_new(illegalStateExceptionClass).arg(exception));
+
+		catchBlock = tryBlock._catch(executionExceptionClass);
+		exception = catchBlock.param("e");
+		catchBlock.body()._throw(_new(beanInstantiationExceptionClass).arg(exception));
+	}
+
+	private void createInternalFactoryMethod(boolean hasSingletonScope) {
+		JMethod factoryMethod = generatedClass.method(PRIVATE | STATIC, generatedClass, GET_INSTANCE_INTERNAL_METHOD_NAME);
 
 		JVar factoryMethodContextParam = factoryMethod.param(classes().CONTEXT, "context");
 
 		JBlock factoryMethodBody = factoryMethod.body();
 
-		JClass factoryHook = refClass(FactoryHook.class);
-
-		/*
-		 * Singletons are bound to the application context
-		 */
 		if (hasSingletonScope) {
-
-			JFieldVar instanceField = generatedClass.field(PRIVATE | STATIC, generatedClass, "instance_");
-
-			JBlock creationBlock = factoryMethodBody //
-					._if(instanceField.eq(_null())) //
-					._then();
-			JVar previousNotifier = viewNotifierHelper.replacePreviousNotifierWithNull(creationBlock);
-			creationBlock.assign(instanceField, _new(generatedClass).arg(factoryMethodContextParam.invoke("getApplicationContext")));
-			creationBlock.invoke(instanceField, getInit());
-
-			JInvocation onInstanceCreated = creationBlock.staticInvoke(factoryHook, "onInstanceCreated");
-			onInstanceCreated.arg(instanceField);
-
-			viewNotifierHelper.resetPreviousNotifier(creationBlock, previousNotifier);
-
-			JInvocation onInstanceRequested = factoryMethodBody.staticInvoke(factoryHook, "onInstanceRequested");
-			onInstanceRequested.arg(instanceField);
-
-			factoryMethodBody._return(instanceField);
+			createSingletonFactoryMethodBody(factoryMethodContextParam, factoryMethodBody);
 		} else {
-			JInvocation newInvocation = _new(generatedClass).arg(factoryMethodContextParam);
-			JVar instance = factoryMethodBody.decl(generatedClass, "instance", newInvocation);
-			JInvocation onInstanceCreated = factoryMethodBody.staticInvoke(factoryHook, "onInstanceCreated");
-			onInstanceCreated.arg(instance);
-			JInvocation onInstanceRequested = factoryMethodBody.staticInvoke(factoryHook, "onInstanceRequested");
-			onInstanceRequested.arg(instance);
-			factoryMethodBody._return(instance);
+			createNonSingletonFactoryMethodBody(factoryMethodContextParam, factoryMethodBody);
 		}
+	}
+
+	private void createSingletonFactoryMethodBody(JVar factoryMethodContextParam, JBlock factoryMethodBody) {
+		JFieldVar instanceField = generatedClass.field(PRIVATE | STATIC, generatedClass, "instance_");
+
+		JBlock creationBlock = factoryMethodBody //
+                ._if(instanceField.eq(_null())) //
+                ._then();
+
+		JVar previousNotifier = viewNotifierHelper.replacePreviousNotifierWithNull(creationBlock);
+		creationBlock.assign(instanceField, _new(generatedClass).arg(factoryMethodContextParam.invoke("getApplicationContext")));
+		creationBlock.invoke(instanceField, getInit());
+
+		JInvocation onInstanceCreated = creationBlock.staticInvoke(factoryHook, "onInstanceCreated");
+		onInstanceCreated.arg(instanceField);
+
+		viewNotifierHelper.resetPreviousNotifier(creationBlock, previousNotifier);
+
+		JInvocation onInstanceRequested = factoryMethodBody.staticInvoke(factoryHook, "onInstanceRequested");
+		onInstanceRequested.arg(instanceField);
+
+		factoryMethodBody._return(instanceField);
+	}
+
+	private void createNonSingletonFactoryMethodBody(JVar factoryMethodContextParam, JBlock factoryMethodBody) {
+		JInvocation newInvocation = _new(generatedClass).arg(factoryMethodContextParam);
+		JVar instance = factoryMethodBody.decl(generatedClass, "instance", newInvocation);
+		JInvocation onInstanceCreated = factoryMethodBody.staticInvoke(factoryHook, "onInstanceCreated");
+		onInstanceCreated.arg(instance);
+		JInvocation onInstanceRequested = factoryMethodBody.staticInvoke(factoryHook, "onInstanceRequested");
+		onInstanceRequested.arg(instance);
+		factoryMethodBody._return(instance);
 	}
 
 	public void createRebindMethod() {
