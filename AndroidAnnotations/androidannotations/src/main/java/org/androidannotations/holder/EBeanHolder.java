@@ -112,9 +112,9 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 
 		if (hasSingletonScope) {
 			instanceField = generatedClass.field(PRIVATE | STATIC | VOLATILE, generatedClass, "instance_");
-			createSingletonFactoryMethodBody(instanceField);
+			createSingletonInternalFactoryMethod(instanceField);
 		} else {
-			createNonSingletonFactoryMethodBody();
+			createNonSingletonInternalFactoryMethod();
 		}
 
 		JMethod factoryMethod = generatedClass.method(PUBLIC | STATIC, generatedClass, GET_INSTANCE_METHOD_NAME);
@@ -162,7 +162,7 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 		catchBlock.body()._throw(_new(beanInstantiationExceptionClass).arg(exception));
 	}
 
-	private void createSingletonFactoryMethodBody(JFieldVar instanceField) {
+	private void createSingletonInternalFactoryMethod(JFieldVar instanceField) {
 		JMethod factoryMethod = getInternalFactoryMethod();
 		JVar factoryMethodContextParam = getContextParam(factoryMethod);
 		JBlock factoryMethodBody = factoryMethod.body();
@@ -184,7 +184,7 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 		factoryMethodBody._return(instanceField);
 	}
 
-	private void createNonSingletonFactoryMethodBody() {
+	private void createNonSingletonInternalFactoryMethod() {
 		JMethod factoryMethod = getInternalFactoryMethod();
 		JVar factoryMethodContextParam = getContextParam(factoryMethod);
 		JBlock factoryMethodBody = factoryMethod.body();
