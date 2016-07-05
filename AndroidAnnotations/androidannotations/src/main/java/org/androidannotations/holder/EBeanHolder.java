@@ -21,6 +21,7 @@ import static com.sun.codemodel.JMod.FINAL;
 import static com.sun.codemodel.JMod.PRIVATE;
 import static com.sun.codemodel.JMod.PUBLIC;
 import static com.sun.codemodel.JMod.STATIC;
+import static com.sun.codemodel.JMod.VOLATILE;
 import static org.androidannotations.helper.ModelConstants.GENERATION_SUFFIX;
 
 import java.util.List;
@@ -74,7 +75,7 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 
 	private void setConstructor() {
 		constructor = generatedClass.constructor(PRIVATE);
-		JVar constructorContextParam = constructor.param(classes().CONTEXT, "context");
+		JVar constructorContextParam = getContextParam(constructor);
 		JBlock constructorBody = constructor.body();
 		List<ExecutableElement> constructors = ElementFilter.constructorsIn(annotatedElement.getEnclosedElements());
 		ExecutableElement superConstructor = constructors.get(0);
@@ -107,18 +108,35 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 	}
 
 	public void createFactoryMethod(boolean hasSingletonScope) {
-		createInternalFactoryMethod(hasSingletonScope);
+		JFieldVar instanceField = null;
+
+		if (hasSingletonScope) {
+			instanceField = generatedClass.field(PRIVATE | STATIC | VOLATILE, generatedClass, "instance_");
+			createSingletonFactoryMethodBody(instanceField);
+		} else {
+			createNonSingletonFactoryMethodBody();
+		}
 
 		JMethod factoryMethod = generatedClass.method(PUBLIC | STATIC, generatedClass, GET_INSTANCE_METHOD_NAME);
 		JBlock factoryMethodBody = factoryMethod.body();
 
-		JInvocation internalFactoryMethodInvocation = generatedClass.staticInvoke(GET_INSTANCE_INTERNAL_METHOD_NAME);
-		JVar factoryMethodContextParam = factoryMethod.param(FINAL, classes().CONTEXT, "context");
-		internalFactoryMethodInvocation.arg(factoryMethodContextParam);
 		JBlock checkUiThreadBlock = factoryMethodBody
 				._if(backgroundExecutorClass.staticInvoke("isUiThread"))
 				._then();
+		JInvocation internalFactoryMethodInvocation = generatedClass.staticInvoke(GET_INSTANCE_INTERNAL_METHOD_NAME);
+		JVar factoryMethodContextParam = factoryMethod.param(FINAL, classes().CONTEXT, "context");
+		internalFactoryMethodInvocation.arg(factoryMethodContextParam);
 		checkUiThreadBlock._return(internalFactoryMethodInvocation);
+
+		if (hasSingletonScope) {
+			factoryMethodBody.directStatement("synchronized(" + generatedClass.name() + ".class)");
+			JBlock synchronizedBlock = new JBlock(true, true);
+			JBlock checkHasInstance = synchronizedBlock
+					._if(instanceField.ne(_null()))
+					._then();
+			checkHasInstance._return(instanceField);
+			factoryMethodBody.add(synchronizedBlock);
+		}
 
 		JDefinedClass anonymousCallableClass = codeModel().anonymousClass(callableGenericClass);
 		JMethod callMethod = anonymousCallableClass.method(PUBLIC, generatedClass, "call");
@@ -144,45 +162,49 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 		catchBlock.body()._throw(_new(beanInstantiationExceptionClass).arg(exception));
 	}
 
-	private void createInternalFactoryMethod(boolean hasSingletonScope) {
-		JMethod factoryMethod = generatedClass.method(PRIVATE | STATIC, generatedClass, GET_INSTANCE_INTERNAL_METHOD_NAME);
-
-		JVar factoryMethodContextParam = factoryMethod.param(classes().CONTEXT, "context");
-
+	private void createSingletonFactoryMethodBody(JFieldVar instanceField) {
+		JMethod factoryMethod = getInternalFactoryMethod();
+		JVar factoryMethodContextParam = getContextParam(factoryMethod);
 		JBlock factoryMethodBody = factoryMethod.body();
-
-		if (hasSingletonScope) {
-			createSingletonFactoryMethodBody(factoryMethodContextParam, factoryMethodBody);
-		} else {
-			createNonSingletonFactoryMethodBody(factoryMethodContextParam, factoryMethodBody);
-		}
-	}
-
-	private void createSingletonFactoryMethodBody(JVar factoryMethodContextParam, JBlock factoryMethodBody) {
-		JFieldVar instanceField = generatedClass.field(PRIVATE | STATIC, generatedClass, "instance_");
 
 		JBlock creationBlock = factoryMethodBody //
                 ._if(instanceField.eq(_null())) //
                 ._then();
 
 		JVar previousNotifier = viewNotifierHelper.replacePreviousNotifierWithNull(creationBlock);
-		creationBlock.assign(instanceField, _new(generatedClass).arg(factoryMethodContextParam.invoke("getApplicationContext")));
-		creationBlock.invoke(instanceField, getInit());
+		creationBlock.directStatement("synchronized(" + generatedClass.name() + ".class)");
+		JBlock synchronizedBlock = new JBlock(true, true);
+		JInvocation newInvocation = _new(generatedClass).arg(factoryMethodContextParam.invoke("getApplicationContext"));
+		synchronizedBlock.assign(instanceField, newInvocation);
+		synchronizedBlock.invoke(instanceField, getInit());
+		creationBlock.add(synchronizedBlock);
 
 		viewNotifierHelper.resetPreviousNotifier(creationBlock, previousNotifier);
 
 		factoryMethodBody._return(instanceField);
 	}
 
-	private void createNonSingletonFactoryMethodBody(JVar factoryMethodContextParam, JBlock factoryMethodBody) {
+	private void createNonSingletonFactoryMethodBody() {
+		JMethod factoryMethod = getInternalFactoryMethod();
+		JVar factoryMethodContextParam = getContextParam(factoryMethod);
+		JBlock factoryMethodBody = factoryMethod.body();
+
 		JInvocation newInvocation = _new(generatedClass).arg(factoryMethodContextParam);
 		JVar instance = factoryMethodBody.decl(generatedClass, "instance", newInvocation);
 		factoryMethodBody._return(instance);
 	}
 
+	private JMethod getInternalFactoryMethod() {
+		return generatedClass.method(PRIVATE | STATIC, generatedClass, GET_INSTANCE_INTERNAL_METHOD_NAME);
+	}
+
+	private JVar getContextParam(JMethod method) {
+		return method.param(classes().CONTEXT, "context");
+	}
+
 	public void createRebindMethod() {
 		JMethod rebindMethod = generatedClass.method(PUBLIC, codeModel().VOID, "rebind");
-		JVar contextParam = rebindMethod.param(classes().CONTEXT, "context");
+		JVar contextParam = getContextParam(rebindMethod);
 		JBlock body = rebindMethod.body();
 		body.assign(getContextField(), contextParam);
 		body.invoke(getInit());
