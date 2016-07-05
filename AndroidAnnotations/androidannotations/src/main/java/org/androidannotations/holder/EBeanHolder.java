@@ -34,18 +34,17 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.util.ElementFilter;
 
 import com.sun.codemodel.JCatchBlock;
+import com.sun.codemodel.JClass;
 import com.sun.codemodel.JDefinedClass;
 import com.sun.codemodel.JExpression;
+import com.sun.codemodel.JInvocation;
 import com.sun.codemodel.JTryBlock;
 import org.androidannotations.api.BackgroundExecutor;
 import org.androidannotations.api.BeanInstantiationException;
-import org.androidannotations.api.FactoryHook;
 import org.androidannotations.process.ProcessHolder;
 
 import com.sun.codemodel.JBlock;
-import com.sun.codemodel.JClass;
 import com.sun.codemodel.JFieldVar;
-import com.sun.codemodel.JInvocation;
 import com.sun.codemodel.JMethod;
 import com.sun.codemodel.JVar;
 
@@ -64,7 +63,6 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 	private JClass illegalStateExceptionClass = refClass(IllegalStateException.class);
 	private JClass executionExceptionClass = refClass(ExecutionException.class);
 	private JClass beanInstantiationExceptionClass = refClass(BeanInstantiationException.class);
-	private JClass factoryHook = refClass(FactoryHook.class);
 
 	private JFieldVar contextField;
 	private JMethod constructor;
@@ -171,13 +169,7 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 		creationBlock.assign(instanceField, _new(generatedClass).arg(factoryMethodContextParam.invoke("getApplicationContext")));
 		creationBlock.invoke(instanceField, getInit());
 
-		JInvocation onInstanceCreated = creationBlock.staticInvoke(factoryHook, "onInstanceCreated");
-		onInstanceCreated.arg(instanceField);
-
 		viewNotifierHelper.resetPreviousNotifier(creationBlock, previousNotifier);
-
-		JInvocation onInstanceRequested = factoryMethodBody.staticInvoke(factoryHook, "onInstanceRequested");
-		onInstanceRequested.arg(instanceField);
 
 		factoryMethodBody._return(instanceField);
 	}
@@ -185,10 +177,6 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 	private void createNonSingletonFactoryMethodBody(JVar factoryMethodContextParam, JBlock factoryMethodBody) {
 		JInvocation newInvocation = _new(generatedClass).arg(factoryMethodContextParam);
 		JVar instance = factoryMethodBody.decl(generatedClass, "instance", newInvocation);
-		JInvocation onInstanceCreated = factoryMethodBody.staticInvoke(factoryHook, "onInstanceCreated");
-		onInstanceCreated.arg(instance);
-		JInvocation onInstanceRequested = factoryMethodBody.staticInvoke(factoryHook, "onInstanceRequested");
-		onInstanceRequested.arg(instance);
 		factoryMethodBody._return(instance);
 	}
 
