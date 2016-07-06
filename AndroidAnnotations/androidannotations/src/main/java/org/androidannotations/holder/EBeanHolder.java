@@ -21,7 +21,6 @@ import static com.sun.codemodel.JMod.FINAL;
 import static com.sun.codemodel.JMod.PRIVATE;
 import static com.sun.codemodel.JMod.PUBLIC;
 import static com.sun.codemodel.JMod.STATIC;
-import static com.sun.codemodel.JMod.VOLATILE;
 import static org.androidannotations.helper.ModelConstants.GENERATION_SUFFIX;
 
 import java.util.List;
@@ -111,7 +110,7 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 		JFieldVar instanceField = null;
 
 		if (hasSingletonScope) {
-			instanceField = generatedClass.field(PRIVATE | STATIC | VOLATILE, generatedClass, "instance_");
+			instanceField = generatedClass.field(PRIVATE | STATIC, generatedClass, "instance_");
 			createSingletonInternalFactoryMethod(instanceField);
 		} else {
 			createNonSingletonInternalFactoryMethod();
