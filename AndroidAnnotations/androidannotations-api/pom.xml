@@ -22,7 +22,7 @@
 	<parent>
 		<artifactId>androidannotations-parent</artifactId>
 		<groupId>org.androidannotations</groupId>
-		<version>3.3.2-m5</version>
+		<version>3.3.2-m6</version>
 	</parent>
 
 	<artifactId>androidannotations-api</artifactId>

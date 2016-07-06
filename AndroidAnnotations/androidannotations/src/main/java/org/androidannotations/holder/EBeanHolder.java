@@ -25,7 +25,6 @@ import static org.androidannotations.helper.ModelConstants.GENERATION_SUFFIX;
 
 import java.util.List;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.RunnableFuture;
 
@@ -33,14 +32,12 @@ import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.util.ElementFilter;
 
-import com.sun.codemodel.JCatchBlock;
 import com.sun.codemodel.JClass;
 import com.sun.codemodel.JDefinedClass;
 import com.sun.codemodel.JExpression;
 import com.sun.codemodel.JInvocation;
-import com.sun.codemodel.JTryBlock;
 import org.androidannotations.api.BackgroundExecutor;
-import org.androidannotations.api.BeanInstantiationException;
+import org.androidannotations.api.UiThreadGetter;
 import org.androidannotations.process.ProcessHolder;
 
 import com.sun.codemodel.JBlock;
@@ -59,10 +56,7 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 	private JClass callableGenericClass = refClass(Callable.class).narrow(generatedClass);
 
 	private JClass backgroundExecutorClass = refClass(BackgroundExecutor.class);
-	private JClass interruptedExceptionClass = refClass(InterruptedException.class);
-	private JClass illegalStateExceptionClass = refClass(IllegalStateException.class);
-	private JClass executionExceptionClass = refClass(ExecutionException.class);
-	private JClass beanInstantiationExceptionClass = refClass(BeanInstantiationException.class);
+	private JClass uiThreadGetter = refClass(UiThreadGetter.class);
 
 	private JFieldVar contextField;
 	private JMethod constructor;
@@ -145,20 +139,7 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 		JExpression callableInstantiation = _new(anonymousCallableClass);
 		futureInstantiation.arg(callableInstantiation);
 		JVar runnableFuture = factoryMethodBody.decl(runnableFutureGenericClass, "runnableFuture", futureInstantiation);
-
-		JVar handler = getHandler();
-		factoryMethodBody.add(handler.invoke("post").arg(runnableFuture));
-
-		JTryBlock tryBlock = factoryMethodBody._try();
-		tryBlock.body()._return(runnableFuture.invoke("get"));
-
-		JCatchBlock catchBlock = tryBlock._catch(interruptedExceptionClass);
-		JVar exception = catchBlock.param("e");
-		catchBlock.body()._throw(_new(illegalStateExceptionClass).arg(exception));
-
-		catchBlock = tryBlock._catch(executionExceptionClass);
-		exception = catchBlock.param("e");
-		catchBlock.body()._throw(_new(beanInstantiationExceptionClass).arg(exception));
+		factoryMethodBody._return(uiThreadGetter.staticInvoke("getOnUiThread").arg(runnableFuture));
 	}
 
 	private void createSingletonInternalFactoryMethod(JFieldVar instanceField) {
