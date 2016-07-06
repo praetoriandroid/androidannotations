@@ -44,7 +44,6 @@ public class BeanWithLazyBeans {
     int initChildren = 0;
 
     void childInitialized() {
-        new Throwable().printStackTrace();
         initChildren++;
     }
 
