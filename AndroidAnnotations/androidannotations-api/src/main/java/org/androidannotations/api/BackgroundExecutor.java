@@ -34,7 +34,15 @@ public class BackgroundExecutor {
 	private static final String TAG = "BackgroundExecutor";
 
 	public static final Executor DEFAULT_EXECUTOR = Executors.newScheduledThreadPool(2 * Runtime.getRuntime().availableProcessors());
+	public static final BackgroundInterceptor EMPTY_INTERCEPTOR = new BackgroundInterceptor() {
+		@Override
+		public boolean intercept(Task task) {
+			return false;
+		}
+	};
+
 	private static Executor executor = DEFAULT_EXECUTOR;
+	private static BackgroundInterceptor interceptor = EMPTY_INTERCEPTOR;
 
 	/**
 	 * The default invocation handler for wrong thread execution. It just throws
@@ -124,6 +132,9 @@ public class BackgroundExecutor {
 	 *             executor)
 	 */
 	public static synchronized void execute(Task task) {
+		if (interceptor.intercept(task)) {
+			return;
+		}
 		Future<?> future = null;
 		if (task.serial == null || !hasSerialRunning(task.serial)) {
 			task.executionAsked = true;
@@ -211,12 +222,12 @@ public class BackgroundExecutor {
 
 	/**
 	 * Change the executor.
-	 * 
+	 *
 	 * Note that if the given executor is not a {@link ScheduledExecutorService}
 	 * then executing a task after a delay will not be supported anymore. If it
 	 * is not even a {@link ExecutorService} then tasks will not be cancellable
 	 * anymore.
-	 * 
+	 *
 	 * @param executor
 	 *            the new executor
 	 *
@@ -226,6 +237,12 @@ public class BackgroundExecutor {
 		Executor prevExecutor = BackgroundExecutor.executor;
 		BackgroundExecutor.executor = executor;
 		return prevExecutor;
+	}
+
+	public static BackgroundInterceptor setInterceptor(BackgroundInterceptor interceptor) {
+		BackgroundInterceptor prevInterceptor = BackgroundExecutor.interceptor;
+		BackgroundExecutor.interceptor = interceptor;
+		return prevInterceptor;
 	}
 
 	public static boolean isProperBackgroundThread(String serial) {
