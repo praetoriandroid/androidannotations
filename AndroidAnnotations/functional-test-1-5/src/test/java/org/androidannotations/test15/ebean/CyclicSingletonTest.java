@@ -18,6 +18,7 @@ package org.androidannotations.test15.ebean;
 import static org.fest.assertions.api.Assertions.assertThat;
 
 import org.androidannotations.test15.EmptyActivityWithoutLayout_;
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
@@ -25,13 +26,29 @@ import org.robolectric.RobolectricTestRunner;
 @RunWith(RobolectricTestRunner.class)
 public class CyclicSingletonTest {
 
+	EmptyActivityWithoutLayout_ context;
+
+	@Before
+	public void setUp() {
+		context = new EmptyActivityWithoutLayout_();
+	}
+
 	@Test
-	public void cyclicSingleton() {
-		EmptyActivityWithoutLayout_ context = new EmptyActivityWithoutLayout_();
+	public void cyclicSingletonInstance() {
 		SomeCyclicSingletonA_ singletonA = SomeCyclicSingletonA_.getInstance_(context);
 		SomeCyclicSingletonB_ singletonB = SomeCyclicSingletonB_.getInstance_(context);
 		assertThat(singletonA.singletonB).isSameAs(singletonB);
 		assertThat(singletonB.singletonA).isSameAs(singletonA);
+	}
+
+	@Test
+	public void cyclicAfterInjectWithSingletons() {
+		CyclicSingletonSingletonA_.getInstance_(context);
+	}
+
+	@Test
+	public void cyclicAfterInjectWithSingletonAndNonSingleton() {
+		CyclicSingletonNonSingletonA_.getInstance_(context);
 	}
 
 }

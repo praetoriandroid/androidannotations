@@ -15,6 +15,8 @@
  */
 package org.androidannotations.process;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 
 import javax.annotation.processing.ProcessingEnvironment;
@@ -59,6 +61,8 @@ public class ModelProcessor {
 
 	private final ProcessingEnvironment processingEnv;
 	private final AnnotationHandlers annotationHandlers;
+
+	private final List<Runnable> generatingPostProcessors = new ArrayList<Runnable>();
 
 	public ModelProcessor(ProcessingEnvironment processingEnv, AnnotationHandlers annotationHandlers) {
 		this.processingEnv = processingEnv;
@@ -105,40 +109,49 @@ public class ModelProcessor {
 				 * elements that are not validated, and therefore not available.
 				 */
 				if (holder != null) {
+					preProcessThrowing(annotationHandler, elements.annotatedElement, holder);
 					processThrowing(annotationHandler, elements.annotatedElement, holder);
 				}
 			}
 
 			Set<? extends Element> rootAnnotatedElements = validatedModel.getRootAnnotatedElements(annotationName);
 
-			for (Element annotatedElement : rootAnnotatedElements) {
-
-				Element enclosingElement;
-				if (annotatedElement instanceof TypeElement) {
-					enclosingElement = annotatedElement;
-				} else {
-					enclosingElement = annotatedElement.getEnclosingElement();
+			processAnnotatedElements(processHolder, annotationHandler, rootAnnotatedElements, new ElementProcessor() {
+				@Override
+				public void process(AnnotationHandler handler, Element element, GeneratedClassHolder generatedClassHolder) throws ProcessingException {
+					preProcessThrowing(handler, element, generatedClassHolder);
 				}
+			});
 
+			processAnnotatedElements(processHolder, annotationHandler, rootAnnotatedElements, new ElementProcessor() {
+				@Override
+				public void process(AnnotationHandler handler, Element element, GeneratedClassHolder generatedClassHolder) throws ProcessingException {
+					processThrowing(handler, element, generatedClassHolder);
+				}
+			});
+
+			processAnnotatedElements(processHolder, annotationHandler, rootAnnotatedElements, new ElementProcessor() {
+				@Override
+				public void process(AnnotationHandler handler, Element element, GeneratedClassHolder generatedClassHolder) throws ProcessingException {
+					postProcessThrowing(handler, element, generatedClassHolder);
+				}
+			});
+
+
+			for (AnnotatedAndRootElements elements : ancestorAnnotatedElements) {
+				GeneratedClassHolder holder = processHolder.getGeneratedClassHolder(elements.rootTypeElement);
 				/*
-				 * We do not generate code for elements belonging to abstract
-				 * classes, because the generated classes are final anyway
+				 * Annotations coming from ancestors may be applied to root
+				 * elements that are not validated, and therefore not available.
 				 */
-				if (!isAbstractClass(enclosingElement)) {
-					GeneratedClassHolder holder = processHolder.getGeneratedClassHolder(enclosingElement);
-					
-					/*
-					 * The holder can be null if the annotated holder class is
-					 * already invalidated.
-					 */
-					if (holder != null) {
-						processThrowing(annotationHandler, annotatedElement, holder);
-					}
-				} else {
-					LOGGER.trace("Skip element {} because enclosing element {} is abstract", annotatedElement, enclosingElement);
+				if (holder != null) {
+					postProcessThrowing(annotationHandler, elements.annotatedElement, holder);
 				}
 			}
+		}
 
+		for (Runnable postProcessor : generatingPostProcessors) {
+			postProcessor.run();
 		}
 
 		return new ProcessResult(//
@@ -147,9 +160,57 @@ public class ModelProcessor {
 				processHolder.getApiClassesToGenerate());
 	}
 
+	private <T extends GeneratedClassHolder>
+	void processAnnotatedElements(ProcessHolder processHolder, AnnotationHandler<T> annotationHandler,
+								  Set<? extends Element> rootAnnotatedElements, ElementProcessor preprocessor) throws ProcessingException {
+		for (Element annotatedElement : rootAnnotatedElements) {
+
+			Element enclosingElement;
+			if (annotatedElement instanceof TypeElement) {
+				enclosingElement = annotatedElement;
+			} else {
+				enclosingElement = annotatedElement.getEnclosingElement();
+			}
+
+            /*
+             * We do not generate code for elements belonging to abstract
+             * classes, because the generated classes are final anyway
+             */
+			if (!isAbstractClass(enclosingElement)) {
+				GeneratedClassHolder holder = processHolder.getGeneratedClassHolder(enclosingElement);
+
+                /*
+                 * The holder can be null if the annotated holder class is
+                 * already invalidated.
+                 */
+				if (holder != null) {
+					preprocessor.process(annotationHandler, annotatedElement, holder);
+				}
+			} else {
+				LOGGER.trace("Skip element {} because enclosing element {} is abstract", annotatedElement, enclosingElement);
+			}
+		}
+	}
+
+	private <T extends GeneratedClassHolder> void preProcessThrowing(AnnotationHandler<T> handler, Element element, T generatedClassHolder) throws ProcessingException {
+		try {
+			handler.preProcess(element, generatedClassHolder);
+		} catch (Exception e) {
+			throw new ProcessingException(e, element);
+		}
+	}
+
 	private <T extends GeneratedClassHolder> void processThrowing(AnnotationHandler<T> handler, Element element, T generatedClassHolder) throws ProcessingException {
 		try {
 			handler.process(element, generatedClassHolder);
+		} catch (Exception e) {
+			throw new ProcessingException(e, element);
+		}
+	}
+
+	private <T extends GeneratedClassHolder> void postProcessThrowing(AnnotationHandler<T> handler, Element element, T generatedClassHolder) throws ProcessingException {
+		try {
+			handler.postProcess(element, generatedClassHolder);
 		} catch (Exception e) {
 			throw new ProcessingException(e, element);
 		}
@@ -168,7 +229,7 @@ public class ModelProcessor {
 	@SuppressWarnings({ "unchecked", "rawtypes" })
 	private boolean generateElements(AnnotationElements validatedModel, ProcessHolder processHolder) throws Exception {
 		boolean isElementRemaining = false;
-		for (GeneratingAnnotationHandler generatingAnnotationHandler : annotationHandlers.getGenerating()) {
+		for (final GeneratingAnnotationHandler generatingAnnotationHandler : annotationHandlers.getGenerating()) {
 			String annotationName = generatingAnnotationHandler.getTarget();
 			Set<? extends Element> annotatedElements = validatedModel.getRootAnnotatedElements(annotationName);
 
@@ -176,7 +237,7 @@ public class ModelProcessor {
 				LOGGER.debug("Processing root elements {}: {}", generatingAnnotationHandler.getClass().getSimpleName(), annotatedElements);
 			}
 
-			for (Element annotatedElement : annotatedElements) {
+			for (final Element annotatedElement : annotatedElements) {
 				/*
 				 * We do not generate code for abstract classes, because the
 				 * generated classes are final anyway (we do not want anyone to
@@ -190,9 +251,20 @@ public class ModelProcessor {
 						if (typeElement.getNestingKind() == NestingKind.MEMBER && processHolder.getGeneratedClassHolder(enclosingElement) == null) {
 							isElementRemaining = true;
 						} else {
-							GeneratedClassHolder generatedClassHolder = generatingAnnotationHandler.createGeneratedClassHolder(processHolder, typeElement);
+							final GeneratedClassHolder generatedClassHolder = generatingAnnotationHandler.createGeneratedClassHolder(processHolder, typeElement);
 							processHolder.put(annotatedElement, generatedClassHolder);
+							generatingAnnotationHandler.preProcess(annotatedElement, generatedClassHolder);
 							generatingAnnotationHandler.process(annotatedElement, generatedClassHolder);
+							generatingPostProcessors.add(new Runnable() {
+								@Override
+								public void run() {
+									try {
+										generatingAnnotationHandler.postProcess(annotatedElement, generatedClassHolder);
+									} catch (Exception e) {
+										throw new IllegalStateException(e);
+									}
+								}
+							});
 						}
 					}
 				} else {
@@ -205,6 +277,10 @@ public class ModelProcessor {
 			 */
 		}
 		return isElementRemaining;
+	}
+
+	private interface ElementProcessor {
+		void process(AnnotationHandler handler, Element element, GeneratedClassHolder generatedClassHolder) throws ProcessingException;
 	}
 
 }

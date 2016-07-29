@@ -29,7 +29,6 @@ import org.androidannotations.process.IsValid;
 
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.Element;
-import javax.lang.model.element.Parameterizable;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
 import java.util.List;
@@ -66,22 +65,23 @@ public class BeanHandler extends BaseAnnotationHandler<EComponentHolder> {
 	}
 
 	@Override
-	public void process(Element element, EComponentHolder holder) throws Exception {
-		TypeMirror typeMirror = annotationHelper.extractAnnotationClassParameter(element);
-		if (typeMirror == null) {
-			typeMirror = element.asType();
-			if (isLazy(element)) {
-				typeMirror = extractLazyBean(element);
-			} else {
-				typeMirror = annotationHelper.getTypeUtils().erasure(typeMirror);
-			}
-		}
+	public void preProcess(Element element, EComponentHolder holder) throws Exception {
+		super.preProcess(element, holder);
 
-		String typeQualifiedName = typeMirror.toString();
-		JClass injectedClass = refClass(annotationHelper.generatedClassQualifiedNameFromQualifiedName(typeQualifiedName));
+		if (!isLazy(element)) {
+			EBeanHolder injectedClassHolder = getGeneratedClassHolder(element);
+			JBlock block = holder.getInitBody();
+			injectedClassHolder.invokeLockInject(block);
+		}
+	}
+
+	@Override
+	public void process(Element element, EComponentHolder holder) throws Exception {
+		String typeQualifiedName = getTypeQualifiedName(element);
+		JClass injectedClass = refClass(getGeneratedClassName(typeQualifiedName));
 
 		String fieldName = element.getSimpleName().toString();
-		JFieldRef beanField = ref(fieldName);
+		JFieldRef beanField = ref(JExpr._this(), fieldName);
 		JBlock block = holder.getInitBody();
 
 		boolean hasNonConfigurationInstanceAnnotation = element.getAnnotation(NonConfigurationInstance.class) != null;
@@ -103,6 +103,48 @@ public class BeanHandler extends BaseAnnotationHandler<EComponentHolder> {
 		}
 	}
 
+	@Override
+	public void postProcess(Element element, EComponentHolder holder) throws Exception {
+		super.postProcess(element, holder);
+
+		if (!isLazy(element)) {
+			EBeanHolder injectedClassHolder = getGeneratedClassHolder(element);
+			String typeQualifiedName = getTypeQualifiedName(element);
+			JClass injectedClass = refClass(getGeneratedClassName(typeQualifiedName));
+			String fieldName = element.getSimpleName().toString();
+			JFieldRef beanField = ref(JExpr._this(), fieldName);
+			injectedClassHolder.invokeUnlockInject(holder.getInitBody(), cast(injectedClass, beanField));
+		}
+	}
+
+	private EBeanHolder getGeneratedClassHolder(Element element) {
+		String typeQualifiedName = getTypeQualifiedName(element);
+		String generatedClassName = getGeneratedClassName(typeQualifiedName);
+		EBeanHolder generatedClassHolder = (EBeanHolder) processHolder.getGeneratedClassHolder(generatedClassName);
+		if (generatedClassHolder == null) {
+			throw new NullPointerException("Holder not found: typeQualifiedName=" + typeQualifiedName + ", generatedClassName=" + generatedClassName);
+		}
+		return generatedClassHolder;
+	}
+
+	private String getTypeQualifiedName(Element element) {
+		TypeMirror typeMirror = annotationHelper.extractAnnotationClassParameter(element);
+		if (typeMirror == null) {
+			typeMirror = element.asType();
+			if (isLazy(element)) {
+				typeMirror = extractLazyBean(element);
+			} else {
+				typeMirror = annotationHelper.getTypeUtils().erasure(typeMirror);
+			}
+		}
+
+		return typeMirror.toString();
+	}
+
+	private String getGeneratedClassName(String typeQualifiedName) {
+		return annotationHelper.generatedClassQualifiedNameFromQualifiedName(typeQualifiedName);
+	}
+
 	private JInvocation getInstance(EComponentHolder holder, JClass injectedClass) {
 		return injectedClass.staticInvoke(EBeanHolder.GET_INSTANCE_METHOD_NAME).arg(holder.getContextRef());
 	}
@@ -122,5 +164,4 @@ public class BeanHandler extends BaseAnnotationHandler<EComponentHolder> {
 		}
 		return types.get(0);
 	}
-
 }

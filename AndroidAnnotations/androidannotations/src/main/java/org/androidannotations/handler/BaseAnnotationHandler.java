@@ -53,6 +53,14 @@ public abstract class BaseAnnotationHandler<T extends GeneratedClassHolder> impl
 	}
 
 	@Override
+	public void preProcess(Element element, T holder) throws Exception {
+	}
+
+	@Override
+	public void postProcess(Element element, T holder) throws Exception {
+	}
+
+	@Override
 	public void setAndroidEnvironment(IRClass rClass, AndroidSystemServices androidSystemServices, AndroidManifest androidManifest) {
 		this.rClass = rClass;
 		this.androidSystemServices = androidSystemServices;

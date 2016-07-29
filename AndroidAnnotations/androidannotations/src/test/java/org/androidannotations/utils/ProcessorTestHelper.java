@@ -45,6 +45,7 @@ import javax.tools.ToolProvider;
 /**
  * Based on http://code.google.com/p/acris/wiki/AnnotationProcessing_Testing
  */
+@SuppressWarnings("ALL")
 public class ProcessorTestHelper {
 
 	public static class CompileResult {

@@ -19,7 +19,9 @@ import static com.sun.codemodel.JExpr.cast;
 import static com.sun.codemodel.JMod.PRIVATE;
 
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.Map;
+import java.util.Queue;
 
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.TypeMirror;
@@ -48,6 +50,7 @@ public abstract class EComponentHolder extends BaseGeneratedClassHolder {
 	private JFieldVar powerManagerRef;
 	private Map<TypeMirror, JFieldVar> databaseHelperRefs = new HashMap<TypeMirror, JFieldVar>();
 	private JVar handler;
+	private final Queue<JVar> injectedVars = new LinkedList<JVar>();
 
 	public EComponentHolder(ProcessHolder processHolder, TypeElement annotatedElement) throws Exception {
 		super(processHolder, annotatedElement);
@@ -135,5 +138,9 @@ public abstract class EComponentHolder extends BaseGeneratedClassHolder {
 		JClass looperClass = classes().LOOPER;
 		JInvocation arg = JExpr._new(handlerClass).arg(looperClass.staticInvoke(METHOD_MAIN_LOOPER));
 		handler = generatedClass.field(PRIVATE, handlerClass, "handler_", arg);
+	}
+
+	public void addAfterInjectCall(String methodName) {
+		getInitBody().invoke(methodName);
 	}
 }

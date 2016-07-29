@@ -30,7 +30,11 @@ public interface AnnotationHandler<T extends GeneratedClassHolder> {
 
 	boolean validate(Element element, AnnotationElements validatedElements);
 
+	void preProcess(Element element, T holder) throws Exception;
+
 	void process(Element element, T holder) throws Exception;
+
+	void postProcess(Element element, T holder) throws Exception;
 
 	void setAndroidEnvironment(IRClass rClass, AndroidSystemServices androidSystemServices, AndroidManifest androidManifest);
 

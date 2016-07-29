@@ -19,6 +19,9 @@ import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
 
+import com.sun.codemodel.JExpr;
+import com.sun.codemodel.JExpression;
+import com.sun.codemodel.JVar;
 import org.androidannotations.annotations.EBean;
 import org.androidannotations.holder.EBeanHolder;
 import org.androidannotations.model.AnnotationElements;
@@ -46,16 +49,40 @@ public class EBeanHandler extends BaseGeneratingAnnotationHandler<EBeanHolder> {
 	}
 
 	@Override
-	public void process(Element element, EBeanHolder holder) {
-		EBean eBeanAnnotation = element.getAnnotation(EBean.class);
-		EBean.Scope eBeanScope = eBeanAnnotation.scope();
-		boolean hasSingletonScope = eBeanScope == EBean.Scope.Singleton;
+	public void preProcess(Element element, EBeanHolder holder) throws Exception {
+		super.preProcess(element, holder);
 
-		holder.createFactoryMethod(hasSingletonScope);
+		holder.invokeLockInject(holder.getInitBody());
+	}
+
+	@Override
+	public void process(Element element, EBeanHolder holder) {
+		boolean hasSingletonScope = hasSingletonScope(element);
+
+		holder.setHasSingletonScope(hasSingletonScope);
+		holder.createFactoryMethod();
+		holder.createInjectHelperMethods();
 
 		if (!hasSingletonScope) {
 			holder.invokeInitInConstructor();
 			holder.createRebindMethod();
 		}
+	}
+
+	@Override
+	public void postProcess(Element element, EBeanHolder holder) throws Exception {
+		super.postProcess(element, holder);
+
+		JExpression instanceArg = null;
+		if (!hasSingletonScope(element)) {
+			instanceArg = JExpr._this();
+		}
+		holder.invokeUnlockInject(holder.getInitBody(), instanceArg);
+	}
+
+	private boolean hasSingletonScope(Element element) {
+		EBean eBeanAnnotation = element.getAnnotation(EBean.class);
+		EBean.Scope eBeanScope = eBeanAnnotation.scope();
+		return eBeanScope == EBean.Scope.Singleton;
 	}
 }

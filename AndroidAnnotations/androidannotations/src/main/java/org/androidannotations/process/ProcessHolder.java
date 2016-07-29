@@ -198,6 +198,8 @@ public class ProcessHolder {
 
 	private final Map<Element, GeneratedClassHolder> generatedClassHolders = new HashMap<Element, GeneratedClassHolder>();
 
+	private final Map<String, GeneratedClassHolder> holdersByGeneratedClassName = new HashMap<String, GeneratedClassHolder>();
+
 	private final ProcessingEnvironment processingEnvironment;
 
 	private final JCodeModel codeModel;
@@ -232,6 +234,7 @@ public class ProcessHolder {
 		originatingElements.add(qualifiedName, element);
 
 		generatedClassHolders.put(element, generatedClassHolder);
+		holdersByGeneratedClassName.put(qualifiedName, generatedClassHolder);
 	}
 
 	public GeneratedClassHolder getGeneratedClassHolder(Element element) {
@@ -241,6 +244,10 @@ public class ProcessHolder {
 			}
 		}
 		return null;
+	}
+
+	public GeneratedClassHolder getGeneratedClassHolder(String generatedClassName) {
+		return holdersByGeneratedClassName.get(generatedClassName);
 	}
 
 	public JClass refClass(Class<?> clazz) {
