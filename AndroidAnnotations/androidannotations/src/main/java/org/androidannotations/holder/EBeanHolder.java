@@ -17,6 +17,7 @@ package org.androidannotations.holder;
 
 import static com.sun.codemodel.JExpr._new;
 import static com.sun.codemodel.JExpr._null;
+import static com.sun.codemodel.JExpr.assign;
 import static com.sun.codemodel.JExpr.invoke;
 import static com.sun.codemodel.JMod.FINAL;
 import static com.sun.codemodel.JMod.PRIVATE;
@@ -69,6 +70,7 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 	private JFieldVar contextField;
 	private JFieldVar instanceField;
 	private JFieldVar lockCounterField;
+	private JFieldVar waitingForAfterInject;
 	private JMethod constructor;
 	private JMethod afterInjectMethod;
 
@@ -224,9 +226,13 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 		JBlock unlockMethodBody = unlockMethod.body();
 		JFieldVar lockCounterField = getLockCounterField();
 		JFieldVar instanceField = getInstanceField();
+		JExpression decrementedCounterEqualsZero = JOp.eq(preDecr(lockCounterField), new JIntLiteralExpression(0));
+		JFieldVar waitingForAfterInjectField = getWaitingForAfterInjectField();
 		unlockMethodBody
-				._if(JOp.eq(preDecr(lockCounterField), new JIntLiteralExpression(0)))
-				._then().invoke(instanceField, AFTER_INJECT_METHOD_NAME);
+				._if(JOp.cand(decrementedCounterEqualsZero, waitingForAfterInjectField))
+				._then()
+				.add(invoke(instanceField, AFTER_INJECT_METHOD_NAME))
+				.add(new JExpressionStatement(assign(getWaitingForAfterInjectField(), new JBooleanLiteralExpression(false))));
 	}
 
 	private void createNonSingletonUnlockInjectMethod() {
@@ -248,6 +254,14 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 			lockCounterField = generatedClass.field(PRIVATE | STATIC, int.class, "lockCounter_");
 		}
 		return lockCounterField;
+	}
+
+	private JFieldVar getWaitingForAfterInjectField() {
+		if (waitingForAfterInject == null) {
+			waitingForAfterInject = generatedClass.field(PRIVATE | STATIC, boolean.class, "waitingForAfterInject_",
+					new JBooleanLiteralExpression(true));
+		}
+		return waitingForAfterInject;
 	}
 
 	private JMethod getLockInjectMethod() {
@@ -319,6 +333,18 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 
 		public void generate(JFormatter f) {
 			f.p(Integer.toString(value));
+		}
+	}
+
+	private static class JBooleanLiteralExpression extends JExpressionImpl {
+		public final boolean value;
+
+		JBooleanLiteralExpression(boolean value) {
+			this.value = value;
+		}
+
+		public void generate(JFormatter f) {
+			f.p(Boolean.toString(value));
 		}
 	}
 
