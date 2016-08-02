@@ -102,15 +102,6 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 	}
 
 	public void createFactoryMethod() {
-		JFieldVar instanceField = null;
-
-		if (hasSingletonScope) {
-			instanceField = getInstanceField();
-			createSingletonInternalFactoryMethod(instanceField);
-		} else {
-			createNonSingletonInternalFactoryMethod();
-		}
-
 		JMethod factoryMethod = generatedClass.method(PUBLIC | STATIC, generatedClass, GET_INSTANCE_METHOD_NAME);
 		JBlock factoryMethodBody = factoryMethod.body();
 
@@ -124,6 +115,9 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 		checkUiThreadBlock._return(internalFactoryMethodInvocation);
 
 		if (hasSingletonScope) {
+			JFieldVar instanceField = getInstanceField();
+			createSingletonInternalFactoryMethod(instanceField);
+
 			factoryMethodBody.directStatement("synchronized(" + generatedClass.name() + ".class)");
 			JBlock synchronizedBlock = new JBlock(true, true);
 			JBlock checkHasInstance = synchronizedBlock
@@ -131,6 +125,8 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 					._then();
 			checkHasInstance._return(instanceField);
 			factoryMethodBody.add(synchronizedBlock);
+		} else {
+			createNonSingletonInternalFactoryMethod();
 		}
 
 		JDefinedClass anonymousCallableClass = codeModel().anonymousClass(callableGenericClass);
