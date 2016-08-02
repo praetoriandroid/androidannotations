@@ -65,17 +65,6 @@ public class BeanHandler extends BaseAnnotationHandler<EComponentHolder> {
 	}
 
 	@Override
-	public void preProcess(Element element, EComponentHolder holder) throws Exception {
-		super.preProcess(element, holder);
-
-		if (!isLazy(element)) {
-			EBeanHolder injectedClassHolder = getGeneratedClassHolder(element);
-			JBlock block = holder.getInitBody();
-			injectedClassHolder.invokeLockInject(block);
-		}
-	}
-
-	@Override
 	public void process(Element element, EComponentHolder holder) throws Exception {
 		String typeQualifiedName = getTypeQualifiedName(element);
 		JClass injectedClass = refClass(getGeneratedClassName(typeQualifiedName));
@@ -95,10 +84,10 @@ public class BeanHandler extends BaseAnnotationHandler<EComponentHolder> {
 			JDefinedClass anonymousClass = codeModel().anonymousClass(narrowLazy);
 			JMethod create = anonymousClass.method(JMod.PUBLIC, clazz, "create");
 			create.annotate(Override.class);
-			create.body()._return(getInstance(holder, injectedClass));
+			create.body()._return(holder.getInstance(injectedClass));
 			block.assign(beanField, _new(anonymousClass));
 		} else {
-			JInvocation getInstance = getInstance(holder, injectedClass);
+			JInvocation getInstance = holder.getInstanceForInject(injectedClass);
 			block.assign(beanField, getInstance);
 		}
 	}
@@ -143,10 +132,6 @@ public class BeanHandler extends BaseAnnotationHandler<EComponentHolder> {
 
 	private String getGeneratedClassName(String typeQualifiedName) {
 		return annotationHelper.generatedClassQualifiedNameFromQualifiedName(typeQualifiedName);
-	}
-
-	private JInvocation getInstance(EComponentHolder holder, JClass injectedClass) {
-		return injectedClass.staticInvoke(EBeanHolder.GET_INSTANCE_METHOD_NAME).arg(holder.getContextRef());
 	}
 
 	private boolean isLazy(Element element) {

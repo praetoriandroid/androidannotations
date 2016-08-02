@@ -61,10 +61,10 @@ public class EBeanHandler extends BaseGeneratingAnnotationHandler<EBeanHolder> {
 
 		holder.setHasSingletonScope(hasSingletonScope);
 		holder.createFactoryMethod();
+		holder.createLockedFactoryMethod();
 		holder.createInjectHelperMethods();
 
 		if (!hasSingletonScope) {
-			holder.invokeInitInConstructor();
 			holder.createRebindMethod();
 		}
 	}
@@ -73,11 +73,7 @@ public class EBeanHandler extends BaseGeneratingAnnotationHandler<EBeanHolder> {
 	public void postProcess(Element element, EBeanHolder holder) throws Exception {
 		super.postProcess(element, holder);
 
-		JExpression instanceArg = null;
-		if (!hasSingletonScope(element)) {
-			instanceArg = JExpr._this();
-		}
-		holder.invokeUnlockInject(holder.getInitBody(), instanceArg);
+		holder.invokeUnlockInject(holder.getInitBody());
 	}
 
 	private boolean hasSingletonScope(Element element) {

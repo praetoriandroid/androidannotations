@@ -15,10 +15,7 @@
  */
 package org.androidannotations.holder;
 
-import static com.sun.codemodel.JExpr._new;
-import static com.sun.codemodel.JExpr._null;
-import static com.sun.codemodel.JExpr.assign;
-import static com.sun.codemodel.JExpr.invoke;
+import static com.sun.codemodel.JExpr.*;
 import static com.sun.codemodel.JMod.FINAL;
 import static com.sun.codemodel.JMod.PRIVATE;
 import static com.sun.codemodel.JMod.PUBLIC;
@@ -34,27 +31,16 @@ import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.util.ElementFilter;
 
-import com.sun.codemodel.JClass;
-import com.sun.codemodel.JDefinedClass;
-import com.sun.codemodel.JExpression;
-import com.sun.codemodel.JExpressionImpl;
-import com.sun.codemodel.JFormatter;
-import com.sun.codemodel.JInvocation;
-import com.sun.codemodel.JOp;
-import com.sun.codemodel.JStatement;
+import com.sun.codemodel.*;
 import org.androidannotations.api.BackgroundExecutor;
 import org.androidannotations.api.UiThreadGetter;
 import org.androidannotations.process.ProcessHolder;
-
-import com.sun.codemodel.JBlock;
-import com.sun.codemodel.JFieldVar;
-import com.sun.codemodel.JMethod;
-import com.sun.codemodel.JVar;
 
 public class EBeanHolder extends EComponentWithViewSupportHolder {
 
 	private static final String GET_INSTANCE_PREFIX = "getInstance";
 	private static final String GET_INSTANCE_INTERNAL_METHOD_NAME = GET_INSTANCE_PREFIX + "Internal" + GENERATION_SUFFIX;
+	private static final String GET_INSTANCE_LOCKED_METHOD_NAME = GET_INSTANCE_PREFIX + "Locked" + GENERATION_SUFFIX;
 	public static final String GET_INSTANCE_METHOD_NAME = GET_INSTANCE_PREFIX + GENERATION_SUFFIX;
 	private static final String LOCK_INJECT_METHOD_NAME = "lockInject_";
 	private static final String UNLOCK_INJECT_METHOD_NAME = "unlockInject_";
@@ -115,11 +101,6 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 		getAfterInjectMethod().body().add(invoke(methodName));
 	}
 
-	public void invokeInitInConstructor() {
-		JBlock constructorBody = constructor.body();
-		constructorBody.invoke(getInit());
-	}
-
 	public void createFactoryMethod() {
 		JFieldVar instanceField = null;
 
@@ -139,13 +120,14 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 		JInvocation internalFactoryMethodInvocation = generatedClass.staticInvoke(GET_INSTANCE_INTERNAL_METHOD_NAME);
 		JVar factoryMethodContextParam = factoryMethod.param(FINAL, classes().CONTEXT, "context");
 		internalFactoryMethodInvocation.arg(factoryMethodContextParam);
+		internalFactoryMethodInvocation.arg(JExpr.lit(false));
 		checkUiThreadBlock._return(internalFactoryMethodInvocation);
 
 		if (hasSingletonScope) {
 			factoryMethodBody.directStatement("synchronized(" + generatedClass.name() + ".class)");
 			JBlock synchronizedBlock = new JBlock(true, true);
 			JBlock checkHasInstance = synchronizedBlock
-					._if(instanceField.ne(_null()))
+					._if(JOp.cand(instanceField.ne(_null()), JOp.not(instanceField.ref(getWaitingForAfterInjectField()))))
 					._then();
 			checkHasInstance._return(instanceField);
 			factoryMethodBody.add(synchronizedBlock);
@@ -160,6 +142,16 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 		futureInstantiation.arg(callableInstantiation);
 		JVar runnableFuture = factoryMethodBody.decl(runnableFutureGenericClass, "runnableFuture", futureInstantiation);
 		factoryMethodBody._return(uiThreadGetter.staticInvoke("getOnUiThread").arg(runnableFuture));
+	}
+
+	public void createLockedFactoryMethod() {
+		JMethod factoryMethod = generatedClass.method(PUBLIC | STATIC, generatedClass, GET_INSTANCE_LOCKED_METHOD_NAME);
+		JVar factoryMethodContextParam = getContextParam(factoryMethod);
+		JBlock factoryMethodBody = factoryMethod.body();
+		JInvocation invocation = generatedClass.staticInvoke(GET_INSTANCE_INTERNAL_METHOD_NAME);
+		invocation.arg(factoryMethodContextParam);
+		invocation.arg(JExpr.lit(true));
+		factoryMethodBody._return(invocation);
 	}
 
 	private JFieldVar getInstanceField() {
@@ -182,6 +174,7 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 	private void createSingletonInternalFactoryMethod(JFieldVar instanceField) {
 		JMethod factoryMethod = getInternalFactoryMethod();
 		JVar factoryMethodContextParam = getContextParam(factoryMethod);
+		JVar lock = factoryMethod.param(Boolean.TYPE, "lock");
 		JBlock factoryMethodBody = factoryMethod.body();
 
 		JBlock creationBlock = factoryMethodBody //
@@ -193,6 +186,7 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 		JBlock synchronizedBlock = new JBlock(true, true);
 		JInvocation newInvocation = _new(generatedClass).arg(factoryMethodContextParam.invoke("getApplicationContext"));
 		synchronizedBlock.assign(instanceField, newInvocation);
+		synchronizedBlock._if(lock)._then().invoke(instanceField, LOCK_INJECT_METHOD_NAME);
 		synchronizedBlock.invoke(instanceField, getInit());
 		creationBlock.add(synchronizedBlock);
 
@@ -204,9 +198,12 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 	private void createNonSingletonInternalFactoryMethod() {
 		JMethod factoryMethod = getInternalFactoryMethod();
 		JVar factoryMethodContextParam = getContextParam(factoryMethod);
+		JVar lock = factoryMethod.param(Boolean.TYPE, "lock");
 		JBlock factoryMethodBody = factoryMethod.body();
 		JInvocation newInvocation = _new(generatedClass).arg(factoryMethodContextParam);
 		JVar instance = factoryMethodBody.decl(generatedClass, "instance", newInvocation);
+		factoryMethodBody._if(lock)._then().invoke(instance, LOCK_INJECT_METHOD_NAME);
+		factoryMethodBody.invoke(instance, getInit());
 		factoryMethodBody._return(instance);
 	}
 
@@ -225,24 +222,22 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 		JMethod unlockMethod = getUnlockInjectMethod();
 		JBlock unlockMethodBody = unlockMethod.body();
 		JFieldVar lockCounterField = getLockCounterField();
-		JFieldVar instanceField = getInstanceField();
 		JExpression decrementedCounterEqualsZero = JOp.eq(preDecr(lockCounterField), new JIntLiteralExpression(0));
 		JFieldVar waitingForAfterInjectField = getWaitingForAfterInjectField();
 		unlockMethodBody
 				._if(JOp.cand(decrementedCounterEqualsZero, waitingForAfterInjectField))
 				._then()
-				.add(invoke(instanceField, AFTER_INJECT_METHOD_NAME))
+				.add(invoke(AFTER_INJECT_METHOD_NAME))
 				.add(new JExpressionStatement(assign(getWaitingForAfterInjectField(), new JBooleanLiteralExpression(false))));
 	}
 
 	private void createNonSingletonUnlockInjectMethod() {
 		JMethod unlockMethod = getUnlockInjectMethod();
-		JVar instance = unlockMethod.param(generatedClass, "instance");
 		JBlock unlockMethodBody = unlockMethod.body();
 		JFieldVar lockCounterField = getLockCounterField();
 		unlockMethodBody
 				._if(JOp.eq(preDecr(lockCounterField), new JIntLiteralExpression(0)))
-				._then().invoke(instance, AFTER_INJECT_METHOD_NAME);
+				._then().invoke(AFTER_INJECT_METHOD_NAME);
 	}
 
 	private void createAfterInjectMethod() {
@@ -251,25 +246,25 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 
 	private JFieldVar getLockCounterField() {
 		if (lockCounterField == null) {
-			lockCounterField = generatedClass.field(PRIVATE | STATIC, int.class, "lockCounter_");
+			lockCounterField = generatedClass.field(PRIVATE, int.class, "lockCounter_");
 		}
 		return lockCounterField;
 	}
 
 	private JFieldVar getWaitingForAfterInjectField() {
 		if (waitingForAfterInject == null) {
-			waitingForAfterInject = generatedClass.field(PRIVATE | STATIC, boolean.class, "waitingForAfterInject_",
+			waitingForAfterInject = generatedClass.field(PRIVATE, boolean.class, "waitingForAfterInject_",
 					new JBooleanLiteralExpression(true));
 		}
 		return waitingForAfterInject;
 	}
 
 	private JMethod getLockInjectMethod() {
-		return generatedClass.method(PUBLIC | STATIC, void.class, LOCK_INJECT_METHOD_NAME);
+		return generatedClass.method(PRIVATE, void.class, LOCK_INJECT_METHOD_NAME);
 	}
 
 	private JMethod getUnlockInjectMethod() {
-		return generatedClass.method(PUBLIC | STATIC, void.class, UNLOCK_INJECT_METHOD_NAME);
+		return generatedClass.method(PUBLIC, void.class, UNLOCK_INJECT_METHOD_NAME);
 	}
 
 	private JMethod getAfterInjectMethod() {
@@ -296,19 +291,24 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 	}
 
 	public void invokeLockInject(JBlock block) {
-		block.add(generatedClass.staticInvoke(LOCK_INJECT_METHOD_NAME));
+		block.add(invoke(LOCK_INJECT_METHOD_NAME));
 	}
 
-	public void invokeUnlockInject(JBlock block, JExpression instanceArg) {
-		JInvocation unlockInvocation = generatedClass.staticInvoke(UNLOCK_INJECT_METHOD_NAME);
-		block.add(unlockInvocation);
-		if (!hasSingletonScope) {
-			unlockInvocation.arg(instanceArg);
-		}
+	public void invokeUnlockInject(JBlock block) {
+		block.add(invoke(UNLOCK_INJECT_METHOD_NAME));
+	}
+
+	public void invokeUnlockInject(JBlock block, JExpression expression) {
+		block.add(invoke(expression, UNLOCK_INJECT_METHOD_NAME));
 	}
 
 	public void setHasSingletonScope(boolean hasSingletonScope) {
 		this.hasSingletonScope = hasSingletonScope;
+	}
+
+	@Override
+	public JInvocation getInstanceForInject(JClass injectedClass) {
+		return injectedClass.staticInvoke(EBeanHolder.GET_INSTANCE_LOCKED_METHOD_NAME).arg(getContextRef());
 	}
 
 	private static class JExpressionStatement implements JStatement {

@@ -143,4 +143,12 @@ public abstract class EComponentHolder extends BaseGeneratedClassHolder {
 	public void addAfterInjectCall(String methodName) {
 		getInitBody().invoke(methodName);
 	}
+
+	public JInvocation getInstance(JClass injectedClass) {
+		return injectedClass.staticInvoke(EBeanHolder.GET_INSTANCE_METHOD_NAME).arg(getContextRef());
+	}
+
+	public JInvocation getInstanceForInject(JClass injectedClass) {
+		return getInstance(injectedClass);
+	}
 }

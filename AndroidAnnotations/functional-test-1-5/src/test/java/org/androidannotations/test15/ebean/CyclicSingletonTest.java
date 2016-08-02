@@ -51,4 +51,9 @@ public class CyclicSingletonTest {
 		CyclicSingletonNonSingletonA_.getInstance_(context);
 	}
 
+	@Test
+	public void cyclicAfterInjectWithSingletonAndNonSingleton2() {
+		CyclicSingletonNonSingleton2_.getInstance_(context);
+	}
+
 }
