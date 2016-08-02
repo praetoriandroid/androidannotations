@@ -16,7 +16,6 @@ public class BeanWithLazyBeans {
 
         @AfterInject
         void init() {
-            System.out.println(parent);
             parent.childInitialized();
         }
 

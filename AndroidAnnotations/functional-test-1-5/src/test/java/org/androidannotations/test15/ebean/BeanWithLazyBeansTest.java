@@ -24,7 +24,6 @@ public class BeanWithLazyBeansTest {
     public void singletonIsLazy() throws Exception {
         Context context = mockContext();
         BeanWithLazyBeans bean = BeanWithLazyBeans_.getInstance_(context);
-        System.out.println(bean);
         assertThat(bean.initChildren).isEqualTo(0);
         bean.getSingleton();
         assertThat(bean.initChildren).isEqualTo(1);
@@ -54,13 +53,22 @@ public class BeanWithLazyBeansTest {
     }
 
     private void resetSingletonToNull() throws IllegalAccessException, NoSuchFieldException {
-        Field instanceField = BeanWithLazyBeans_.class.getDeclaredField("instance_");
-        instanceField.setAccessible(true);
-        instanceField.set(null, null);
+        resetSingleton(BeanWithLazyBeans_.class);
+        resetSingleton(BeanWithLazyBeans_.Singleton_.class);
+    }
 
-        instanceField = BeanWithLazyBeans_.Singleton_.class.getDeclaredField("instance_");
+    private void resetSingleton(Class<?> c) throws NoSuchFieldException, IllegalAccessException {
+        Field instanceField = c.getDeclaredField("instance_");
+        Field lockCounterField = c.getDeclaredField("lockCounter_");
+        Field waitingForAfterInjectField = c.getDeclaredField("waitingForAfterInject_");
+
         instanceField.setAccessible(true);
+        lockCounterField.setAccessible(true);
+        waitingForAfterInjectField.setAccessible(true);
+
         instanceField.set(null, null);
+        lockCounterField.set(null, 0);
+        waitingForAfterInjectField.set(null, true);
     }
 
     private Context mockContext() {
