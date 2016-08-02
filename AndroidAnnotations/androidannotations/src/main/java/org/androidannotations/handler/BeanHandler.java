@@ -70,7 +70,7 @@ public class BeanHandler extends BaseAnnotationHandler<EComponentHolder> {
 		JClass injectedClass = refClass(getGeneratedClassName(typeQualifiedName));
 
 		String fieldName = element.getSimpleName().toString();
-		JFieldRef beanField = ref(JExpr._this(), fieldName);
+		JFieldRef beanField = ref(fieldName);
 		JBlock block = holder.getInitBody();
 
 		boolean hasNonConfigurationInstanceAnnotation = element.getAnnotation(NonConfigurationInstance.class) != null;
@@ -101,7 +101,7 @@ public class BeanHandler extends BaseAnnotationHandler<EComponentHolder> {
 			String typeQualifiedName = getTypeQualifiedName(element);
 			JClass injectedClass = refClass(getGeneratedClassName(typeQualifiedName));
 			String fieldName = element.getSimpleName().toString();
-			JFieldRef beanField = ref(JExpr._this(), fieldName);
+			JFieldRef beanField = ref(fieldName);
 			injectedClassHolder.invokeUnlockInject(holder.getInitBody(), cast(injectedClass, beanField));
 		}
 	}
