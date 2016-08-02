@@ -222,13 +222,13 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 		JMethod unlockMethod = getUnlockInjectMethod();
 		JBlock unlockMethodBody = unlockMethod.body();
 		JFieldVar lockCounterField = getLockCounterField();
-		JExpression decrementedCounterEqualsZero = JOp.eq(preDecr(lockCounterField), new JIntLiteralExpression(0));
+		JExpression decrementedCounterEqualsZero = JOp.eq(preDecr(lockCounterField), JExpr.lit(0));
 		JFieldVar waitingForAfterInjectField = getWaitingForAfterInjectField();
 		unlockMethodBody
 				._if(JOp.cand(decrementedCounterEqualsZero, waitingForAfterInjectField))
 				._then()
 				.add(invoke(AFTER_INJECT_METHOD_NAME))
-				.add(new JExpressionStatement(assign(getWaitingForAfterInjectField(), new JBooleanLiteralExpression(false))));
+				.add(new JExpressionStatement(assign(getWaitingForAfterInjectField(), JExpr.lit(false))));
 	}
 
 	private void createNonSingletonUnlockInjectMethod() {
@@ -236,7 +236,7 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 		JBlock unlockMethodBody = unlockMethod.body();
 		JFieldVar lockCounterField = getLockCounterField();
 		unlockMethodBody
-				._if(JOp.eq(preDecr(lockCounterField), new JIntLiteralExpression(0)))
+				._if(JOp.eq(preDecr(lockCounterField), JExpr.lit(0)))
 				._then().invoke(AFTER_INJECT_METHOD_NAME);
 	}
 
@@ -254,7 +254,7 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 	private JFieldVar getWaitingForAfterInjectField() {
 		if (waitingForAfterInject == null) {
 			waitingForAfterInject = generatedClass.field(PRIVATE, boolean.class, "waitingForAfterInject_",
-					new JBooleanLiteralExpression(true));
+					JExpr.lit(true));
 		}
 		return waitingForAfterInject;
 	}
@@ -321,30 +321,6 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 		@Override
 		public void state(JFormatter formatter) {
 			formatter.g(expression).p(';').nl();
-		}
-	}
-
-	private static class JIntLiteralExpression extends JExpressionImpl {
-		public final int value;
-
-		JIntLiteralExpression(int value) {
-			this.value = value;
-		}
-
-		public void generate(JFormatter f) {
-			f.p(Integer.toString(value));
-		}
-	}
-
-	private static class JBooleanLiteralExpression extends JExpressionImpl {
-		public final boolean value;
-
-		JBooleanLiteralExpression(boolean value) {
-			this.value = value;
-		}
-
-		public void generate(JFormatter f) {
-			f.p(Boolean.toString(value));
 		}
 	}
 
