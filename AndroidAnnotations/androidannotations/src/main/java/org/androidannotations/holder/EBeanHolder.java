@@ -177,20 +177,24 @@ public class EBeanHolder extends EComponentWithViewSupportHolder {
 		JVar lock = factoryMethod.param(Boolean.TYPE, "lock");
 		JBlock factoryMethodBody = factoryMethod.body();
 
-		JBlock creationBlock = factoryMethodBody //
-                ._if(instanceField.eq(_null())) //
+		JBlock alreadyExistsBlock = factoryMethodBody //
+                ._if(instanceField.ne(_null())) //
                 ._then();
 
-		JVar previousNotifier = viewNotifierHelper.replacePreviousNotifierWithNull(creationBlock);
-		creationBlock.directStatement("synchronized(" + generatedClass.name() + ".class)");
+		alreadyExistsBlock._if(lock)._then().invoke(instanceField, LOCK_INJECT_METHOD_NAME);
+		alreadyExistsBlock._return(instanceField);
+
+		JVar previousNotifier = viewNotifierHelper.replacePreviousNotifierWithNull(factoryMethodBody);
+		factoryMethodBody.directStatement("synchronized(" + generatedClass.name() + ".class)");
 		JBlock synchronizedBlock = new JBlock(true, true);
 		JInvocation newInvocation = _new(generatedClass).arg(factoryMethodContextParam.invoke("getApplicationContext"));
 		synchronizedBlock.assign(instanceField, newInvocation);
 		synchronizedBlock._if(lock)._then().invoke(instanceField, LOCK_INJECT_METHOD_NAME);
 		synchronizedBlock.invoke(instanceField, getInit());
-		creationBlock.add(synchronizedBlock);
+		factoryMethodBody.add(synchronizedBlock);
 
-		viewNotifierHelper.resetPreviousNotifier(creationBlock, previousNotifier);
+
+		viewNotifierHelper.resetPreviousNotifier(factoryMethodBody, previousNotifier);
 
 		factoryMethodBody._return(instanceField);
 	}
